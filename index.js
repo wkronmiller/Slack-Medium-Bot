@@ -1,19 +1,10 @@
 import redis from 'redis';
-import slackClient from '@slack/client';
 import hn from 'hackernews-api';
+import querystring from 'querystring';
+import request from 'request';
 import htmlToText from 'html-to-text';
 import {redisConfig, slackConfig} from './config';
 
-const RtmClient = slackClient.RtmClient;
-const RTM_EVENTS = slackClient.RTM_EVENTS;
-const CLIENT_EVENTS = slackClient.CLIENT_EVENTS;
-
-const rtm = new RtmClient(slackConfig.apiToken, {logLevel: 'info'});
-console.log('Starting RTM client');
-rtm.start();
-console.log('Started RTM client');
-
-const redisClient = redis.createClient({host: redisConfig.host, port: redisConfig.port});
 
 function checkPost(postId){
     return new Promise((resolve, reject) => {
@@ -27,12 +18,31 @@ function checkPost(postId){
     });
 }
 
-function sendMessage(message) {
-    console.log('Sending', message);
-    rtm.sendMessage(message, slackConfig.postChannel, () => {});
+function postData(body) {
+    const options = {
+        url: slackConfig.hookUrl,
+        method: 'POST',
+        body: JSON.stringify(body),
+    };
+    console.log('opts', options);
+    request(options, (err, response, body) => {
+        if(err){
+            throw err;
+        }
+        console.log(body);
+    });
 }
 
-function monitorNews() {
+function sendMessage(message) {
+    console.log('Sending', message);
+    postData({text: message, username: 'hackernews-bot'})
+}
+
+sendMessage('Hackernews online');
+
+const redisClient = redis.createClient({host: redisConfig.host});
+
+(function monitorNews() {
     const storyPromises = hn.getTopStories().map((postId) => {
         return checkPost(postId);
     });
@@ -75,9 +85,4 @@ function monitorNews() {
         }
         setTimeout(monitorNews, timeoutMs);
     });
-}
-
-rtm.on(CLIENT_EVENTS.RTM.RTM_CONNECTION_OPENED, () => {
-    console.log('Online');
-    monitorNews();
-});
+})();

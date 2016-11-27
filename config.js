@@ -1,10 +1,11 @@
 export const redisConfig = {
-    host: process.env.REDIS_HOST || 'redis',
-    port: parseInt(process.env.REDIS_PORT || '6379'),
+    host: process.env.REDIS_HOST || 'redis'
 };
 
+console.log('Redis config', redisConfig);
 
 export const slackConfig = {
-    apiToken: process.env.SLACK_TOKEN,
-    postChannel: process.env.SLACK_CHANNEL,
+    hookUrl: process.env.SLACK_URL
 };
+
+console.log('Slack config', slackConfig);

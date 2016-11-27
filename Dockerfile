@@ -9,6 +9,7 @@ COPY package.json ${workdir}
 RUN npm install
 
 COPY *.js ${workdir}/
+COPY .babelrc ${workdir}/
 
 
 CMD ["npm", "start"]
