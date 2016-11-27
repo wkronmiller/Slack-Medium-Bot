@@ -1,0 +1,10 @@
+export const redisConfig = {
+    host: 'localhost',
+    port: 33184,
+};
+
+
+export const slackConfig = {
+    apiToken: 'SLACK-API-TOKEN',
+    postChannel: 'SLACK-POST-CHANNEL'
+};
