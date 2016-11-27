@@ -1,4 +1,7 @@
 *
 !index.js
+!*.template
+!package.json
+!.babelrc
 !Dockerfile
 !.gitignore
