@@ -1,7 +1,4 @@
-*
-!index.js
-!*.template
-!package.json
-!.babelrc
-!Dockerfile
-!.gitignore
+env.sh
+node_modules/
+npm-debug.log
+.node-*
