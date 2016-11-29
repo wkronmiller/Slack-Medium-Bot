@@ -1,3 +1,3 @@
 #!/bin/bash
-docker build -t wkronmiller/hn-slack .
-docker push wkronmiller/hn-slack
+docker build -t wkronmiller/medium-slack .
+docker push wkronmiller/medium-slack

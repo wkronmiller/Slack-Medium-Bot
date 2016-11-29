@@ -1,18 +1,22 @@
+import medium from 'medium-sdk';
 import redis from 'redis';
-import hn from 'hackernews-api';
+import flatMap from 'flatmap';
+import fastFeed from 'fast-feed';
 import querystring from 'querystring';
 import request from 'request';
 import htmlToText from 'html-to-text';
-import {redisConfig, slackConfig} from './config';
+import {redisConfig, slackConfig, mediumConfig} from './config';
 
+const REDIS_SET_NAME = 'medium-posts';
 
-function checkPost(postId){
+function checkPost(post){
+    const postId = post.id
     return new Promise((resolve, reject) => {
-        redisClient.sadd("posts", postId, (err, result)=>{
+        redisClient.sadd(REDIS_SET_NAME, postId, (err, result)=>{
             if(err){
                 return reject(err);
             }
-            const output = {exists: result, postId: postId};
+            const output = {exists: result == 0, id: postId, body: post.body};
             resolve(output);
         });
     });
@@ -35,54 +39,84 @@ function postData(body) {
 
 function sendMessage(message) {
     console.log('Sending', message);
-    postData({text: message, username: 'hackernews-bot'})
+    postData({text: message, username: 'medium-bot', channel: slackConfig.postChannel})
 }
 
-sendMessage('Hackernews online');
+sendMessage('Medium bot online');
 
 const redisClient = redis.createClient({host: redisConfig.host});
+const mediumClient = new medium.MediumClient({
+    clientId: mediumConfig.id,
+    clientSecret: mediumConfig.secret
+});
+mediumClient.setAccessToken(mediumConfig.token);
+
+function getUserId() {
+    return new Promise((resolve, reject) => {
+        mediumClient.getUser((err, user) => {
+            if(err){
+                return reject(err);
+            }
+            resolve(user.id);
+        });
+    });
+}
+
+function getPublications(userId){
+    return new Promise((resolve, reject) => {
+        mediumClient.getPublicationsForUser({userId: userId}, (err, publications) => {
+            if(err){
+                return reject(err);
+            }
+            return resolve(publications);
+        })
+    });
+}
+
+function getPublicationFeed(publication) {
+    const {url} = publication;
+    const header = 'https://medium.com/'
+    return `${header}feed/${url.replace(header, '')}`;
+}
+
+function loadPublicationFeed(url) {
+    return new Promise((resolve, reject) => {
+        request(url, (error, response, body) => {
+            if(!error && response.statusCode == 200) {
+                return resolve(body);
+            }
+            return reject({error: error, response: response});
+        });
+    });
+}
+
+function loadPublicationFeeds(urls) {
+    return Promise.all(urls.map(loadPublicationFeed));
+}
+
+function parseFeed(xml) {
+    return fastFeed.parse(xml).items.map((item) => {
+        Object.keys(item).map((key) => {
+            item[key] = htmlToText.fromString(item[key]);
+        });
+        const {id, title, description} = item;
+        const body = `*${title}*\nlink: ${id}`;
+        return {id, body};
+    });
+}
 
 (function monitorNews() {
-    const storyPromises = hn.getTopStories().map((postId) => {
-        return checkPost(postId);
-    });
-    Promise.all(storyPromises)
-    .then((results) => {
-        const newPostIds = results.filter(({exists}) => exists == 1).map(({postId}) => postId);
-        const maxIndex = Math.min(newPostIds.length - 1, 20);
-        return newPostIds.slice(0, maxIndex);
+    const docPromises = getUserId().then((userId) => {
+        return getPublications(userId);
     })
-    .then((newPostIds) => {
-      console.log('New posts', newPostIds.length);
-        return newPostIds
-        .map((postId, postIndex) => {
-          console.log('Loading post', postId);
-          setTimeout(() => {
-              const post = hn.getItem(postId);
-              console.log('Loading children for', postId);
-              const kids = post.kids;
-              const topComment = (() => {
-                if(kids && kids.length > 0){
-                  const comment = hn.getItem(kids[0]);
-                  const commentText = htmlToText.fromString(comment.text, {
-                    wordwrap: 80
-                  });
-                  return `${comment.by}: ${commentText}`;
-                }
-                return 'No comments';
-              })();
-              console.log('top comment', topComment);
-              const postText = `*${post.title}*\n${post.url}\n\`\`\`${topComment}\`\`\``;
-              sendMessage(postText);
-          }, 1000 * postIndex);
-        })
-        .length;
+    .then((publications) => publications.map(getPublicationFeed))
+    .then((urls) => loadPublicationFeeds(urls))
+    .then((xml_docs) => flatMap(xml_docs,parseFeed))
+    .then((docs) => Promise.all(docs.map((doc)=> checkPost(doc))))
+    .then((docs) => docs.filter((doc)=> doc.exists == false))
+    .then((docs) => {
+        docs.forEach((doc) => sendMessage(doc.body));
+        console.log(`Sent ${docs.length} new posts`);
     })
-    .then((numNew) => {
-        var timeoutMs = 20000;
-        if(numNew < 3) {
-            timeoutMs *= 10;
-        }
-        setTimeout(monitorNews, timeoutMs);
-    });
+    setTimeout(monitorNews, 1 * 60 * 1000);
 })();
