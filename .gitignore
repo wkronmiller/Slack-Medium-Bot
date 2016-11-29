@@ -1,4 +1,5 @@
 env.sh
+run-medium-slack.sh
 node_modules/
 npm-debug.log
 .node-*
